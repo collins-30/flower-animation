@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PALETTES, FLOWER_ORDER } from './palettes.js';
+import { IntroParticles } from './IntroParticles.js';
 
 const TAU = Math.PI * 2;
 const rand = (a = 1, b) => (b === undefined ? Math.random() * a : a + Math.random() * (b - a));
@@ -363,6 +364,9 @@ export class Bouquet {
     this.ambientMat = null;
     this.haloMat = null;
 
+    this.introParticles = new IntroParticles(glowTexture, { mobile: this.mobile });
+    this.group.add(this.introParticles.group);
+
     this._buildStems();
     this._buildLeaves();
     this._buildFlowers(glowTexture);
@@ -635,9 +639,30 @@ export class Bouquet {
     this.group.add(tie);
   }
 
+  /** Timeline second when the very last flower finishes opening. */
+  get lastBloomEnd() {
+    return this.introDuration + Math.max(...this.flowers.map((f) => f.bloomStart + f.bloomDur));
+  }
+
+  /** True once every flower has fully opened at timeline time `time`. */
+  fullyBloomed(time) {
+    return time >= this.lastBloomEnd;
+  }
+
+  /** Cinematic intro (seconds) — stems stay dormant until this elapses. */
+  get introDuration() {
+    return this.introParticles.duration;
+  }
+
+  /** Re-seed the intro burst so the next timeline pass feels fresh. */
+  restartIntro() {
+    this.introParticles.restart();
+  }
+
   /* ---------------- public API ---------------- */
 
   setPalette(index, instant = false) {
+    this.introParticles.setPalette(index, instant);
     const p = PALETTES[index % PALETTES.length];
     const white = new THREE.Color('#ffffff');
     const black = new THREE.Color('#000000');
@@ -669,20 +694,27 @@ export class Bouquet {
 
   setWind(x, y) {
     this.shared.uWind.value.set(x, y);
+    this.introParticles.setWind(x, y);
   }
 
   setScale(s) {
     this.shared.uScale.value = s;
+    this.introParticles.setScale(s);
   }
 
   update(dt, time) {
-    this.shared.uTime.value = time;
+    const bloomShift = this.introParticles.duration;
+    // everything except the intro burst itself follows the post-intro clock,
+    // so stems/leaves stay dormant until the cinematic opening finishes
+    const bloomTime = time - bloomShift;
+    this.shared.uTime.value = bloomTime;
+    this.introParticles.update(dt, time);
 
     for (const s of this.stems) {
-      s.mat.uniforms.uGrowth.value = easeInOutCubic((time - s.growthStart) / s.growthDur);
+      s.mat.uniforms.uGrowth.value = easeInOutCubic((bloomTime - s.growthStart) / s.growthDur);
     }
     for (const f of this.flowers) {
-      f.mat.uniforms.uBloom.value = easeInOutCubic((time - f.bloomStart) / f.bloomDur);
+      f.mat.uniforms.uBloom.value = easeInOutCubic((bloomTime - f.bloomStart) / f.bloomDur);
     }
 
     // smooth palette transitions
@@ -698,6 +730,7 @@ export class Bouquet {
   }
 
   dispose() {
+    this.introParticles.dispose();
     this.group.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {

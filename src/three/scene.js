@@ -2,10 +2,16 @@ import * as THREE from 'three';
 import { Bouquet } from './Bouquet.js';
 import { makeGlowTexture } from './texture.js';
 import { PALETTES } from './palettes.js';
+import { INTRO_DURATION } from '../config/message.js';
+import { createAudioEngine } from '../audio/engine.js';
 
 /**
  * Creates the full-screen Three.js scene inside `container`.
- * Returns an API: { restart, nextPalette, dispose, paletteIndex }
+ * Returns an API: { restart, nextPalette, dispose, paletteIndex, toggleMute, muted }
+ *
+ * Owns the cinematic timeline: intro particles -> stem growth ->
+ * bloom -> finale. Restarting rewinds the clock, re-seeds the intro
+ * burst, eases the camera back to centre, and replays the audio.
  */
 export function createFlowerScene(container, opts = {}) {
   const motionOK = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -28,11 +34,15 @@ export function createFlowerScene(container, opts = {}) {
   const bouquet = new Bouquet(glowTexture, { mobile });
   scene.add(bouquet.group);
 
+  const audio = createAudioEngine();
+
   const clock = new THREE.Clock();
   let offset = 0;
   if (!motionOK) offset = -100; // pre-bloom for reduced motion
 
   let paletteIndex = 0;
+  let bloomedFired = false;
+  let introFired = false;
 
   // --- pointer / wind (smoothed) ---
   const pointer = { x: 0, y: 0 };
@@ -46,6 +56,7 @@ export function createFlowerScene(container, opts = {}) {
     pointer.y = -((cy / window.innerHeight) * 2 - 1);
     if (!interacted) {
       interacted = true;
+      audio.unlock(); // browsers require a gesture before audio starts
       opts.onFirstInteract?.();
     }
   }
@@ -71,11 +82,37 @@ export function createFlowerScene(container, opts = {}) {
   let disposed = false;
   const lookTarget = new THREE.Vector3(0, -0.15, 0);
 
+  function clamp01(x) {
+    return Math.min(1, Math.max(0, x));
+  }
+  function easeOutCubic(x) {
+    return 1 - Math.pow(1 - clamp01(x), 3);
+  }
+
   function tick() {
     if (disposed) return;
     raf = requestAnimationFrame(tick);
     const dt = Math.min(clock.getDelta(), 0.05);
     const time = clock.elapsedTime - offset;
+
+    // --- cinematic intro phase (first INTRO_DURATION seconds) ---
+    const introT = clamp01(time / INTRO_DURATION);
+    opts.onIntroProgress?.(introT);
+    if (!introFired && time >= INTRO_DURATION) {
+      introFired = true;
+      opts.onIntroDone?.();
+    }
+
+    // --- dolly + rise: pull back from a close-up, settle into the frame ---
+    const dolly = easeOutCubic(introT);
+    const baseZ = camera.aspect < 0.65 ? 8.2 : 6.4;
+    const baseY = 1.35 - dolly * 1.2; // starts high, lands at 0.15
+    const baseZPos = baseZ + (1 - dolly) * 2.4; // starts ~2.4 further back
+
+    // --- pointer parallax (suppressed while the intro still owns the camera) ---
+    const parallaxStrength = motionOK ? dolly : 0;
+    const targetX = pointer.x * 0.45 * parallaxStrength;
+    const targetY = baseY + pointer.y * 0.3 * parallaxStrength;
 
     // smooth the wind toward pointer
     wind.x += (pointer.x - wind.x) * Math.min(1, dt * 3.5);
@@ -83,9 +120,16 @@ export function createFlowerScene(container, opts = {}) {
     bouquet.setWind(wind.x, wind.y);
     bouquet.update(dt, time);
 
-    // cinematic camera parallax
-    camera.position.x += (pointer.x * 0.45 - camera.position.x) * Math.min(1, dt * 2.5);
-    camera.position.y += (0.15 + pointer.y * 0.3 - camera.position.y) * Math.min(1, dt * 2.5);
+    // fire once, a beat after the last flower fully opens
+    if (!bloomedFired && bouquet.fullyBloomed(time + 1.2)) {
+      bloomedFired = true;
+      audio.bloom();
+      opts.onFullyBloomed?.();
+    }
+
+    camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 2.5);
+    camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 2.5);
+    camera.position.z += (baseZPos - camera.position.z) * Math.min(1, dt * 2.5);
     camera.lookAt(lookTarget);
 
     renderer.render(scene, camera);
@@ -96,15 +140,31 @@ export function createFlowerScene(container, opts = {}) {
     get paletteIndex() { return paletteIndex; },
     get paletteCount() { return PALETTES.length; },
     get paletteName() { return PALETTES[paletteIndex % PALETTES.length].name; },
+    get muted() { return audio.muted; },
     restart() {
-      // snap to the start of the timeline (negative offset trick keeps clock running)
+      // rewind the cinematic timeline (negative offset trick keeps clock running)
       offset = clock.elapsedTime;
       if (!motionOK) offset = -100;
+      bloomedFired = false;
+      introFired = false;
+      // fresh intro burst + fresh camera framing + replayed audio
+      bouquet.restartIntro();
+      pointer.x = 0;
+      pointer.y = 0;
+      camera.position.set(0, 1.35, (camera.aspect < 0.65 ? 8.2 : 6.4) + 2.4);
+      audio.restart();
+      opts.onRestart?.();
     },
     nextPalette() {
       paletteIndex = (paletteIndex + 1) % PALETTES.length;
       bouquet.setPalette(paletteIndex);
       return paletteIndex;
+    },
+    toggleMute() {
+      return audio.toggleMute();
+    },
+    setMuted(m) {
+      audio.setMuted(m);
     },
     dispose() {
       disposed = true;
@@ -113,6 +173,7 @@ export function createFlowerScene(container, opts = {}) {
       window.removeEventListener('pointermove', onPointer);
       window.removeEventListener('touchmove', onPointer);
       window.removeEventListener('touchstart', onPointer);
+      audio.dispose();
       bouquet.dispose();
       glowTexture.dispose();
       renderer.dispose();
