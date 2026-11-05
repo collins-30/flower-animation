@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Bouquet } from './Bouquet.js';
+import { Lily } from './Lily.js';
 import { makeGlowTexture } from './texture.js';
 import { PALETTES } from './palettes.js';
 import { INTRO_DURATION } from '../config/message.js';
@@ -31,7 +31,7 @@ export function createFlowerScene(container, opts = {}) {
   camera.position.set(0, 0.15, 6.4);
 
   const glowTexture = makeGlowTexture();
-  const bouquet = new Bouquet(glowTexture, { mobile });
+  const bouquet = new Lily(glowTexture, { mobile });
   scene.add(bouquet.group);
 
   const audio = createAudioEngine();
@@ -74,6 +74,18 @@ export function createFlowerScene(container, opts = {}) {
     camera.position.z = aspect < 0.65 ? 8.2 : 6.4;
     camera.updateProjectionMatrix();
     bouquet.setScale(Math.max(w, h) * 1.8);
+
+    // Flower on the left, text column on the right. On tall/portrait
+    // screens the flower sits in the upper half and the text below it.
+    const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z;
+    const halfW = halfH * aspect;
+    if (aspect < 0.9) {
+      const s = Math.min(1.25, (halfW * 2) / 3.4);
+      bouquet.setLayout(-0.25 * s, halfH * 0.36, s);
+    } else {
+      const s = Math.min(1.6, Math.max(0.75, halfW / 3.2));
+      bouquet.setLayout(-halfW * 0.43, 0.2, s);
+    }
   }
   window.addEventListener('resize', resize);
   resize();

@@ -70,7 +70,7 @@ export default function App() {
           <br />
           when you can <em>code</em> them?
         </h1>
-        <p className="sub">grown particle by particle, just for you</p>
+        <p className="sub">grown petal by petal, just for you</p>
       </header>
 
       {/* Final reveal — bouquet stays visible behind the message */}
@@ -91,7 +91,7 @@ export default function App() {
       </footer>
 
       <p className={`hint ${revealed || interacted ? 'gone' : ''}`}>
-        move your cursor through the garden
+        move your cursor to stir the lily
       </p>
 
       <div className={`palette-tag ${interacted && !revealed ? 'show' : ''}`}>
