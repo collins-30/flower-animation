@@ -6,8 +6,8 @@
   --ink: #f5ede0;
   --ink-dim: rgba(245, 237, 224, 0.52);
   --accent: #e8b4b8;
-  --glass: rgba(255, 255, 255, 0.06);
-  --glass-brd: rgba(255, 255, 255, 0.14);
+  --glass: rgba(255, 255, 255, 0.025);
+  --glass-brd: rgba(255, 255, 255, 0.10);
   /* right-hand text column (the lily lives on the left) */
   --col-left: 53vw;
   --col-right: 6vw;
@@ -347,8 +347,8 @@ body {
   appearance: none;
   border: 1px solid var(--glass-brd);
   background: var(--glass);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(5px) saturate(110%);
+  -webkit-backdrop-filter: blur(5px) saturate(110%);
   color: var(--ink);
   font-family: var(--sans);
   font-size: 11px;
@@ -368,7 +368,7 @@ body {
 }
 
 .btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.32);
   transform: translateY(-1px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 24px rgba(255, 200, 220, 0.08);
