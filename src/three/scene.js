@@ -60,6 +60,14 @@ export function createFlowerScene(container, opts = {}) {
       opts.onFirstInteract?.();
     }
   }
+  // Browsers only allow sound after a click / tap / key press, so try
+  // again on each of those until the song is playing.
+  function onGesture() {
+    audio.unlock();
+  }
+  window.addEventListener('pointerdown', onGesture, { passive: true });
+  window.addEventListener('keydown', onGesture);
+  window.addEventListener('touchend', onGesture, { passive: true });
   window.addEventListener('pointermove', onPointer, { passive: true });
   window.addEventListener('touchmove', onPointer, { passive: true });
   window.addEventListener('touchstart', onPointer, { passive: true });
@@ -185,6 +193,9 @@ export function createFlowerScene(container, opts = {}) {
       window.removeEventListener('pointermove', onPointer);
       window.removeEventListener('touchmove', onPointer);
       window.removeEventListener('touchstart', onPointer);
+      window.removeEventListener('pointerdown', onGesture);
+      window.removeEventListener('keydown', onGesture);
+      window.removeEventListener('touchend', onGesture);
       audio.dispose();
       bouquet.dispose();
       glowTexture.dispose();

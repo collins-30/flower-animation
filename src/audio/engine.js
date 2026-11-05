@@ -1,188 +1,137 @@
 /**
- * Procedural cinematic audio engine (Web Audio, no audio assets).
+ * Audio engine — plays the song in `public/audio/` on a loop.
  *
- * A soft detuned pad + gentle music-box sparkle that swells during
- * the introduction, lifts when the bouquet fully blooms, and can be
- * replayed from the top on every Restart Bloom.
+ * To use a different song: put the file in `public/audio/` and change
+ * SONG_SOURCES below (the first format the browser can play is used).
  *
- * The AudioContext is created lazily on the first user gesture
- * (`unlock()`), because browsers refuse to start audio before one.
+ * Behaviour:
+ *   - starts on the first user gesture (`unlock()`), because browsers
+ *     refuse to play sound before one, and fades in slowly
+ *   - lifts slightly when the lily fully blooms (`bloom()`)
+ *   - starts again from the top on every Restart Bloom (`restart()`)
+ *   - the mute button fades it out / back in
  */
 
-const CHORDS = [
-  [220.0, 261.63, 329.63, 493.88], // Am add9
-  [174.61, 220.0, 261.63, 329.63], // F add9
-  [196.0, 246.94, 293.66, 392.0], // G
-  [261.63, 329.63, 392.0, 587.33], // C add9
+const SONG_SOURCES = [
+  { src: '/audio/song.m4a', type: 'audio/mp4' },
+  { src: '/audio/song.mp3', type: 'audio/mpeg' },
 ];
 
-const MELODY = [
-  523.25, 659.25, 783.99, 659.25, 587.33, 783.99, 880.0, 783.99,
-  659.25, 587.33, 523.25, 587.33, 659.25, 523.25, 440.0, 523.25,
-];
-
-const MASTER_LEVEL = 0.16;
-const STEP_SECONDS = 0.45;
+const VOLUME = 0.75; // overall level, 0 – 1
+const FADE_IN = 3.0; // seconds
+const BLOOM_LIFT = 1.25; // how much louder at the bloom (1 = no change)
 
 export function createAudioEngine() {
+  let audio = null;
   let ctx = null;
-  let master = null;
-  let padGain = null;
-  let padFilter = null;
-  let sparkleGain = null;
-  let padOsc = []; // [{ osc, voice }] — two detuned oscillators per voice
-  let timer = null;
-  let step = 0;
-  let nextNoteTime = 0;
+  let gain = null;
   let muted = false;
   let disposed = false;
+  let started = false;
+
+  function pickSource() {
+    const probe = document.createElement('audio');
+    const ok = SONG_SOURCES.find((s) => probe.canPlayType(s.type) !== '');
+    return (ok ?? SONG_SOURCES[SONG_SOURCES.length - 1]).src;
+  }
 
   function ensure() {
-    if (ctx || disposed) return ctx;
+    if (audio || disposed) return audio;
+    audio = new Audio(pickSource());
+    audio.loop = true;
+    audio.preload = 'auto';
+
+    // Route through Web Audio for smooth fades (iOS ignores audio.volume).
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      ctx = new AC();
-
-      master = ctx.createGain();
-      master.gain.value = 0;
-      master.connect(ctx.destination);
-
-      // --- pad bus ---
-      padFilter = ctx.createBiquadFilter();
-      padFilter.type = 'lowpass';
-      padFilter.frequency.value = 750;
-      padFilter.Q.value = 0.7;
-
-      padGain = ctx.createGain();
-      padGain.gain.value = 0.5;
-      padFilter.connect(padGain);
-      padGain.connect(master);
-
-      CHORDS[0].forEach((freq, voice) => {
-        for (const detune of [-4, 4]) {
-          const osc = ctx.createOscillator();
-          osc.type = 'triangle';
-          osc.frequency.value = freq;
-          osc.detune.value = detune;
-          osc.connect(padFilter);
-          osc.start();
-          padOsc.push({ osc, voice });
-        }
-      });
-
-      // --- sparkle (music box) bus ---
-      sparkleGain = ctx.createGain();
-      sparkleGain.gain.value = 0.35;
-      sparkleGain.connect(master);
+      if (AC) {
+        ctx = new AC();
+        gain = ctx.createGain();
+        gain.gain.value = 0.0001;
+        ctx.createMediaElementSource(audio).connect(gain);
+        gain.connect(ctx.destination);
+      }
     } catch {
       ctx = null;
+      gain = null;
     }
-    return ctx;
+    if (!gain) audio.volume = 0;
+    return audio;
   }
 
-  function rampMaster(target, seconds) {
-    if (!ctx || !master) return;
-    const now = ctx.currentTime;
-    master.gain.cancelScheduledValues(now);
-    master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), now);
-    master.gain.exponentialRampToValueAtTime(Math.max(target, 0.0001), now + seconds);
-  }
-
-  function playSparkle(freq, when) {
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, when);
-    g.gain.exponentialRampToValueAtTime(0.5, when + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + 1.4);
-    osc.connect(g);
-    g.connect(sparkleGain);
-    osc.start(when);
-    osc.stop(when + 1.5);
-  }
-
-  function playChord(index, when) {
-    const chord = CHORDS[index % CHORDS.length];
-    for (const { osc, voice } of padOsc) {
-      osc.frequency.setValueAtTime(osc.frequency.value, when);
-      osc.frequency.exponentialRampToValueAtTime(chord[voice], when + 1.2);
+  function fadeTo(target, seconds) {
+    if (!audio) return;
+    if (gain && ctx) {
+      const now = ctx.currentTime;
+      const g = gain.gain;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(Math.max(g.value, 0.0001), now);
+      g.exponentialRampToValueAtTime(Math.max(target, 0.0001), now + seconds);
+      return;
     }
+    // fallback: step the element volume
+    const from = audio.volume;
+    const start = performance.now();
+    const step = () => {
+      if (disposed || !audio) return;
+      const t = Math.min(1, (performance.now() - start) / (seconds * 1000));
+      audio.volume = Math.min(1, Math.max(0, from + (target - from) * t));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    step();
   }
 
-  function schedulerTick() {
-    if (!ctx) return;
-    while (nextNoteTime < ctx.currentTime + 0.6) {
-      // music-box sparkle on alternate steps
-      if (step % 2 === 0) {
-        playSparkle(MELODY[(step / 2) % MELODY.length], nextNoteTime);
-      }
-      // chord change every 8 steps (~3.6 s)
-      if (step % 8 === 0 && step > 0) {
-        playChord(Math.floor(step / 8), nextNoteTime);
-      }
-      step += 1;
-      nextNoteTime += STEP_SECONDS;
-    }
-  }
-
-  function startScheduler() {
-    if (!ctx || timer) return;
-    nextNoteTime = ctx.currentTime + 0.1;
-    timer = setInterval(schedulerTick, 250);
+  function play() {
+    ctx?.resume?.();
+    audio.play().catch(() => {
+      // blocked until a real gesture — the next pointer/touch will retry
+      started = false;
+    });
   }
 
   function unlock() {
     if (!ensure()) return;
-    ctx.resume?.();
-    startScheduler();
-    rampMaster(muted ? 0 : MASTER_LEVEL, 2.5); // slow cinematic fade-in
-  }
-
-  function swell() {
-    if (!ctx || !padFilter) return;
-    const now = ctx.currentTime;
-    padFilter.frequency.cancelScheduledValues(now);
-    padFilter.frequency.setValueAtTime(padFilter.frequency.value, now);
-    padFilter.frequency.linearRampToValueAtTime(1500, now + 1.2);
-    padFilter.frequency.linearRampToValueAtTime(750, now + 4.5);
+    if (started) return;
+    started = true;
+    play();
+    fadeTo(muted ? 0 : VOLUME, FADE_IN);
   }
 
   return {
     get muted() { return muted; },
-    get started() { return !!ctx; },
+    get started() { return started; },
 
     /** Call from any user gesture (click / first pointer interaction). */
     unlock,
 
-    /** Full replay: reset progression + scheduler, re-run the intro fade-in. */
+    /** Restart Bloom: dip, jump back to the start of the song, fade in again. */
     restart() {
       if (!ensure()) return;
-      ctx.resume?.();
-      step = 0;
-      nextNoteTime = ctx.currentTime + 0.15;
-      playChord(0, nextNoteTime);
-      if (padFilter) padFilter.frequency.value = 750;
-      startScheduler();
-      // quick dip then the full intro fade-in again
-      rampMaster(0.0001, 0.15);
+      started = true;
+      fadeTo(0, 0.2);
       setTimeout(() => {
-        if (!disposed) rampMaster(muted ? 0 : MASTER_LEVEL, 2.5);
-      }, 180);
+        if (disposed || !audio) return;
+        audio.currentTime = 0;
+        play();
+        fadeTo(muted ? 0 : VOLUME, FADE_IN);
+      }, 220);
     },
 
-    /** Gentle lift when the last flower opens / the finale appears. */
+    /** Gentle lift when the lily finishes opening, then settle back. */
     bloom() {
-      swell();
+      if (!audio || muted) return;
+      fadeTo(Math.min(1, VOLUME * BLOOM_LIFT), 1.5);
+      setTimeout(() => {
+        if (!disposed && !muted) fadeTo(VOLUME, 4);
+      }, 1600);
     },
     finale() {
-      swell();
+      this.bloom();
     },
 
     setMuted(m) {
       muted = !!m;
-      if (ctx) rampMaster(muted ? 0 : MASTER_LEVEL, 0.6);
+      if (audio) fadeTo(muted ? 0 : VOLUME, 0.6);
     },
 
     toggleMute() {
@@ -192,16 +141,15 @@ export function createAudioEngine() {
 
     dispose() {
       disposed = true;
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+        audio = null;
       }
-      if (ctx) {
-        ctx.close?.().catch?.(() => {});
-        ctx = null;
-        master = padGain = padFilter = sparkleGain = null;
-        padOsc = [];
-      }
+      ctx?.close?.().catch?.(() => {});
+      ctx = null;
+      gain = null;
     },
   };
 }
