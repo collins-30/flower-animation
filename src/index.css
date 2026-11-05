@@ -419,20 +419,34 @@ body {
       linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.55) 72%, rgba(0, 0, 0, 0.7) 100%);
   }
 
+  /* Text is anchored to sit just above the buttons, and sized from the
+     *visible* screen height (svh), so browser toolbars (e.g. iPhone
+     Safari's bottom bar) can't push it underneath the controls. */
+  :root { --controls-space: 96px; }
+
   .intro, .hero, .finale {
-    top: 52vh;
+    top: auto;
+    bottom: 0;
+    max-height: 64vh;
+    max-height: 64svh;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: flex-end;
     text-align: center;
-    padding: 0 24px 110px;
+    padding: 0 22px calc(var(--controls-space) + env(safe-area-inset-bottom, 0px));
   }
-  .intro { top: 56vh; }
-  .finale-headline { font-size: clamp(30px, 8.5vw, 52px); }
-  .headline { font-size: clamp(30px, 8.5vw, 52px); }
-  .finale-eyebrow { margin-bottom: 10px; }
-  .finale-support { margin-top: 12px; }
-  .finale-follow { margin-top: 12px; }
-  .finale-sign { margin-top: 16px; }
+  .intro { padding-bottom: calc(var(--controls-space) + 40px + env(safe-area-inset-bottom, 0px)); }
+  .finale-headline,
+  .headline {
+    font-size: clamp(26px, 8.5vw, 52px);
+    font-size: clamp(26px, min(8.5vw, 5.4svh), 52px);
+  }
+  .finale-eyebrow { margin-bottom: 8px; }
+  .finale-support { margin-top: 10px; }
+  .finale-follow { margin-top: 8px; }
+  .finale-sign { margin-top: 12px; }
+
+  .controls { bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+  .crafted { bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
 
   .crafted, .hint, .controls, .palette-tag {
     left: 50%;
@@ -448,7 +462,20 @@ body {
 }
 
 @media (max-width: 640px) {
-  .btn { padding: 12px 18px; font-size: 10px; letter-spacing: 0.2em; }
-  .controls { gap: 8px; bottom: 20px; }
+  .btn { padding: 12px 14px; font-size: 10px; letter-spacing: 0.1em; white-space: nowrap; gap: 8px; }
+  .controls { gap: 8px; max-width: calc(100vw - 20px); }
   .hint { display: none; }
+}
+
+@media (max-width: 380px) {
+  .btn { padding: 11px 11px; font-size: 9.5px; letter-spacing: 0.05em; gap: 6px; }
+  .controls { gap: 6px; }
+}
+
+/* short visible area (small phones, or a big browser toolbar) */
+@media (max-aspect-ratio: 9/10) and (max-height: 720px) {
+  :root { --controls-space: 84px; }
+  .finale-eyebrow { margin-bottom: 4px; }
+  .finale-support, .finale-follow { margin-top: 6px; }
+  .finale-sign { margin-top: 8px; }
 }
