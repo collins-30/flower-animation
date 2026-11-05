@@ -91,7 +91,7 @@ export default function App() {
       </footer>
 
       <p className={`hint ${revealed || interacted ? 'gone' : ''}`}>
-        move your cursor to stir the lily
+        move your cursor to stir the lily, tap for sound
       </p>
 
       <div className={`palette-tag ${interacted && !revealed ? 'show' : ''}`}>
