@@ -4,18 +4,18 @@
  */
 export const MESSAGE = {
   // Main headline (the name is rendered in expressive gradient italics)
-  headlineBefore: 'I still think about you, ',
+  headlineBefore: 'I don\'t know what i can do without you, ',
   name: 'Amor',
   headlineAfter: '.', // trailing punctuation after the name
 
   // Supporting line under the headline
-  supporting: "Some feelings don't just disappear.",
+  supporting: "Baby, if you commot, baby if you commot",
 
   // Gentle follow-up line
-  followUp: 'I hope these flowers make you smile',
+  followUp: 'Nobody fit to fit inside your shoe',
 
   // Sign-off
-  signOff: 'With love, chubby.',
+  signOff: 'After you Aisha, I no wan love',
 
   // Subtle portfolio footer
   footer: 'Crafted with code, patience and a little love.',
